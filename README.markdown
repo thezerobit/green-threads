@@ -8,7 +8,7 @@ Allows for cooperative multitasking with help of CL-CONT for
 continuations. Tries to mimic BORDEAUX-THREADS API as much as possible.
 
 ```common-lisp
-(use :green-threads)
+(use-package :green-threads)
 ;; verbose version using CL-CONT directly
 (make-thread
   (cl-cont:with-call/cc
