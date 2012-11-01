@@ -6,14 +6,40 @@
 (in-package :cl-user)
 (defpackage green-threads
   (:use :cl :cl-cont)
-  (:export #:*default-special-bindings*
-           #:*current-thread*
-           #:thread
-           #:queue-thread
-           #:make-thread
+  (:export #:make-thread
+           #:*default-special-bindings*
+           #:current-thread
+           #:threadp
+           #:thread-name
+
+           ;; locks not yet supported:
+           ;; #:make-lock
+           ;; #:acquire-lock
+           ;; #:release-lock
+           ;; #:with-lock-held
+           ;; #:make-recursive-lock
+           ;; #:acquire-recursive-lock
+           ;; #:release-recursive-lock
+           ;; #:with-recursive-lock-held
+
            #:thread-yield
-           #:with-green-thread
-           #:all-threads))
+
+           ;; condition variables not yet supported
+           ;; TODO: instead of futures?
+           ;; #:make-condition-variable
+           ;; #:condition-wait
+           ;; #:condition-notify
+
+           #:all-threads
+           ;; #:interrupt-thread ;; N/A
+           #:destroy-thread
+           #:thread-alive-p
+           ;; #:join-thread ;; TODO
+
+           ;; additional:
+           #:queue-thread
+           #:thread-yield
+           #:with-green-thread))
 (in-package :green-threads)
 
 ;; Batched-Queue
@@ -72,7 +98,8 @@
   ((name :initarg :name :reader name)
    (binding-symbols :initarg :binding-symbols :reader binding-symbols)
    (binding-values :initarg :binding-values :reader binding-values)
-   (next-action :initform nil :accessor next-action)))
+   (next-action :initform nil :accessor next-action)
+   (alive :initform T :accessor alive)))
 
 ;; functions
 (defun bindings-from-alist (alist)
@@ -94,13 +121,14 @@
   (loop while (not (empty-p *waiting-threads*))
         do (let ((thread (head *waiting-threads*)))
              (setf *waiting-threads* (tail *waiting-threads*))
-             (progv (binding-symbols thread) (binding-values thread)
-               (let ((*current-thread* thread)
-                     (action (next-action thread)))
-                 (setf (next-action thread) nil)
-                 (funcall action)
-                 (if (not (next-action thread))
-                   (deactivate-thread thread)))))))
+             (when (alive thread) ;; destroyed threads might be here
+               (progv (binding-symbols thread) (binding-values thread)
+                 (let ((*current-thread* thread)
+                       (action (next-action thread)))
+                   (setf (next-action thread) nil)
+                   (funcall action)
+                   (if (not (next-action thread))
+                     (deactivate-thread thread))))))))
 
 (defun queue-thread (thread action)
   (when (next-action thread)
@@ -129,12 +157,28 @@
 (defmacro with-green-thread (&body body)
   `(without-call/cc (make-thread (with-call/cc (lambda () ,@body)))))
 
+;; Some BORDEAUX-THREADS functionality
 (defun all-threads () *active-threads*)
 
-(defun special-binding-example ()
-  (let ((*default-special-bindings* '((*test-special* . "foo"))))
-    (with-green-thread
-      (format t "1: ~a~%" *test-special*)
-      (let ((*default-special-bindings* '((*test-special* . "bar"))))
-        (with-green-thread (format t "3: ~a~%" *test-special*)))
-      (format t "2: ~a~%" *test-special*))))
+(defun current-thread () *current-thread*)
+
+(defun threadp (obj) (typep obj 'thread))
+
+(defun thread-name (thread) (name thread))
+
+(defun destroy-thread (thread)
+  (when (eq thread *current-thread*)
+    (error "Called DESTROY-THREAD on self."))
+  (setf (alive thread) nil)
+  (setf (next-action thread) nil)
+  (deactivate-thread thread))
+
+(defun thread-alive-p (thread) (alive thread))
+
+;(defun special-binding-example ()
+  ;(let ((*default-special-bindings* '((*test-special* . "foo"))))
+    ;(with-green-thread
+      ;(format t "1: ~a~%" *test-special*)
+      ;(let ((*default-special-bindings* '((*test-special* . "bar"))))
+        ;(with-green-thread (format t "3: ~a~%" *test-special*)))
+      ;(format t "2: ~a~%" *test-special*))))
