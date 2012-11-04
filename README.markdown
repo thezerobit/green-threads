@@ -88,6 +88,8 @@ alist of symbol/value pairs that will be specially bound in any green
 threads you create.
 
 ```common-lisp
+(defparameter *foo* "outer")
+
 (with-green-thread
   (print *foo*)
   (let ((*default-special-bindings* '((*foo* . "first"))))
@@ -179,9 +181,7 @@ Clone repo into ~/quicklisp/local-projects. Run the following command:
 
 ## TODO
 
-* Tests.
-
-* Futures.
+100% test coverage.
 
 ## Author
 
