@@ -46,7 +46,8 @@
            #:queue-future
            #:complete-future
            #:future-complete-p
-           #:wait-for))
+           #:wait-for
+           #:get-join-future))
 (in-package :green-threads)
 
 ;; Batched-Queue
@@ -106,7 +107,7 @@
    (binding-values :initarg :binding-values :reader binding-values)
    (next-action :initform nil :accessor next-action)
    (alive :initform T :accessor alive)
-   (join-future :initform nil)))
+   (join-future :initform (make-future) :reader join-future)))
 
 ;; functions
 (defun bindings-from-alist (alist)
@@ -123,8 +124,7 @@
   (setf *active-threads*
         (remove-if (lambda (other) (eq thread other))
                         *active-threads*))
-  (with-slots (join-future) thread
-    (when join-future (complete-future join-future))))
+  (complete-future (join-future thread)))
 
 (defun thread-loop ()
   (loop while (not (empty-p *thread-queue*))
@@ -188,13 +188,13 @@
 
 (defun thread-alive-p (thread) (alive thread))
 
+(defun get-join-future (thread)
+  (join-future thread))
+
 (defun/cc join-thread (thread)
   (when (not *current-thread*)
     (error "Called JOIN-THREAD not from within a green thread."))
-  (with-slots (join-future) thread
-    (when (null join-future)
-      (setf join-future (make-future)))
-    (wait-for join-future)))
+  (wait-for (join-future thread)))
 
 ;; Futures
 

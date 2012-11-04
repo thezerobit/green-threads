@@ -143,6 +143,10 @@ WAIT-FOR (future) Requires CL-CONT:WITH-CALL/CC environment, causes the
 current thread to wait for the completion of the specified future and
 returns the values given to the future when it does.
 
+GET-JOIN-FUTURE (thread) Returns a future which will complete when the
+passed in thread completes. This provides a lower level way to join
+threads without using JOIN-THREAD which requires CL-CONT:WITH-CALL/CC.
+
 Example use of futures from (taken from tests):
 
 ```common-lisp
