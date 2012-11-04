@@ -179,6 +179,10 @@ Example use of futures from (taken from tests):
 
 Clone repo into ~/quicklisp/local-projects. Run the following command:
 
+```common-lisp
+(ql:quickload :green-threads)
+```
+
 ## TODO
 
 100% test coverage.
