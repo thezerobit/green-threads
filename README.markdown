@@ -7,42 +7,129 @@ A lightweight thread / cooperative multitasking library for Common Lisp.
 Allows for cooperative multitasking with help of CL-CONT for
 continuations. Tries to mimic BORDEAUX-THREADS API as much as possible.
 
+Let's show how the threads work and build up to higher level
+abstractions.
+
+The MAKE-THREAD function takes a closure/function of zero arguments and
+starts executing it, since we are not using OS threads, it cannot
+actually preempt the thread, so the thread has to yield by calling
+QUEUE-NEXT, passing a closure containing the continuation of the thread
+and return. MAKE-THREAD has an optional keyword parameter :NAME for
+specifying a name for the thread.
+
+In this example, we create a thread which executes immediately, it
+creates an additional thread and then continues on, it yields by calling
+QUEUE-NEXT and passing a continuation. That allows the other thread to
+execute before continuing the first:
+
 ```common-lisp
 (use-package :green-threads)
-;; verbose version using CL-CONT directly
+
+(make-thread
+  (lambda ()
+    (format t "Do Something~%")
+    (make-thread
+      (lambda ()
+        (format t "Do Something Else.~%")))
+    (queue-next ;; queue next action and yield
+      (lambda ()
+        (format t "Do More.~%")))))
+
+;; output:
+;; Do Something
+;; Do Something Else.
+;; Do More.
+```
+
+In the above example, the continuation of the primary thread is nested
+inside a QUEUE-NEXT call. That's pretty inconvenient. Nobody enjoys
+programming in continuation-passing-style (CPS), so let's see how we can
+avoid that.
+
+In the next example, we use the CL-CONT library directly to transform
+our code into CPS which allows us to use THREAD-YIELD to yield without
+having to specify the continuation ourselves. You'll notice that the
+primary thread no longer has to nest the continuation in a closure.
+
+```common-lisp
 (make-thread
   (cl-cont:with-call/cc
     (lambda ()
-      (do-something)
+      (format t "Do Something~%")
       (cl-cont:without-call/cc
         (make-thread
           (cl-cont:with-call/cc
             (lambda ()
-              (do-something-else)))))
+              (format t "Do Something Else~%")))))
       (thread-yield) ;; allow other threads to run
-      (do-more))))
-
-;; Same as above, but with-green-thread macro creates new thread
-;; and sets up with-call/cc and wraps body in (lambda () ... )
-(with-green-thread
-  (do-something)
-  (with-green-thread
-    (do-something-else))
-  (thread-yield) ;; allow other threads to run
-  (do-more))
+      (format t "Do More~%"))))
 ```
+
+The last example is a bit noisy with the CL-CONT calls, so we can
+instead use the WITH-GREEN-THREAD macro which wraps our code in an
+anonymous closure, and applies CL-CONT macros appropriately.
+
+```common-lisp
+(with-green-thread
+  (format t "Do Something~%")
+  (with-green-thread
+    (format t "Do Something Else~%"))
+  (thread-yield) ;; allow other threads to run
+  (format t "Do More~%"))
+```
+
+Viola, you can now write cooperatively multitasking code without
+resorting to writing CPS by hand.
+
+Dynamic bindings don't over well into green threads, so this library has
+a similar mechanism as BORDEAUX-THREADS, and that is the
+\*DEFAULT-SPECIAL-BINDINGS\* special variable which can be set to an
+alist of symbol/value pairs that will be specially bound in any green
+threads you create.
+
+```common-lisp
+(with-green-thread
+  (print *foo*)
+  (let ((*default-special-bindings* '((*foo* . "first"))))
+    (with-green-thread
+      (print *foo*)))
+  (thread-yield)
+  (print *foo*))
+
+;; output:
+;; "outer"
+;; "first"
+;; "outer"
+```
+
+MAKE-THREAD creates a new green thread and runs it if no green threads
+are currently running. If called from within a running green thread, it
+will queue the thread to run later.
+
+CURRENT-THREAD returns the currently running thread object or NIL if you
+are not currently in one.
+
+THREADP returns T if the object passed to it is a thread object.
+
+THREAD-NAME returns the name of the thread passed to it or NIL of none
+was provided.
+
+ALL-THREADS returns a list of all threads.
+
+DESTROY-THREAD will do just that, cannot be called on currently
+executing thread.
+
+THREAD-ALIVE-P returns T if thread passed to it is still alive.
 
 ## Installation
 
 Clone repo into ~/quicklisp/local-projects. Run the following command:
 
-```common-lisp
-(ql:quickload :green-threads)
-```
-
 ## TODO
 
-Futures.
+* Tests.
+
+* Futures.
 
 ## Author
 

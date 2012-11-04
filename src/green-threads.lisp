@@ -37,7 +37,7 @@
            ;; #:join-thread ;; TODO
 
            ;; additional:
-           #:queue-thread
+           #:queue-next
            #:thread-yield
            #:with-green-thread))
 (in-package :green-threads)
@@ -130,13 +130,16 @@
                    (if (not (next-action thread))
                      (deactivate-thread thread))))))))
 
-(defun queue-thread (thread action)
-  (when (next-action thread)
-    (error "Called queue-thread on a thread that is already queued."))
-  (setf (next-action thread) action)
-  (setf *waiting-threads*
-        (snoc *waiting-threads* thread))
-  (when (not *current-thread*) (thread-loop)))
+(defun queue-next (action &optional thread)
+  (let ((thread (or thread *current-thread*)))
+    (when (null thread)
+      (error "Must provide thread to queue-next if not already in thread."))
+    (when (next-action thread)
+      (error "Called queue-next on a thread that is already queued."))
+    (setf (next-action thread) action)
+    (setf *waiting-threads*
+          (snoc *waiting-threads* thread))
+    (when (not *current-thread*) (thread-loop))))
 
 (defun make-thread (function &key name)
   (multiple-value-bind
@@ -148,11 +151,12 @@
                            :binding-symbols binding-symbols
                            :binding-values binding-values)))
       (push new-thread *active-threads*)
-      (queue-thread new-thread function))))
+      (queue-next function new-thread)
+      new-thread)))
 
 (defun/cc thread-yield ()
   (let/cc continuation
-    (queue-thread *current-thread* continuation)))
+    (queue-next continuation)))
 
 (defmacro with-green-thread (&body body)
   `(without-call/cc (make-thread (with-call/cc (lambda () ,@body)))))
@@ -174,11 +178,3 @@
   (deactivate-thread thread))
 
 (defun thread-alive-p (thread) (alive thread))
-
-;(defun special-binding-example ()
-  ;(let ((*default-special-bindings* '((*test-special* . "foo"))))
-    ;(with-green-thread
-      ;(format t "1: ~a~%" *test-special*)
-      ;(let ((*default-special-bindings* '((*test-special* . "bar"))))
-        ;(with-green-thread (format t "3: ~a~%" *test-special*)))
-      ;(format t "2: ~a~%" *test-special*))))
