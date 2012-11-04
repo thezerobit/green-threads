@@ -34,12 +34,19 @@
            ;; #:interrupt-thread ;; N/A
            #:destroy-thread
            #:thread-alive-p
-           ;; #:join-thread ;; TODO
+           #:join-thread
 
            ;; additional:
            #:queue-next
            #:thread-yield
-           #:with-green-thread))
+           #:with-green-thread
+
+           ;; futures:
+           #:make-future
+           #:queue-future
+           #:complete-future
+           #:future-complete-p
+           #:wait-for))
 (in-package :green-threads)
 
 ;; Batched-Queue
@@ -90,8 +97,7 @@
 (defparameter *default-special-bindings* nil)
 (defparameter *current-thread* nil)
 (defparameter *active-threads* nil)
-(defparameter *waiting-threads* (make-instance 'batched-queue))
-(defparameter *future-threads* nil)
+(defparameter *thread-queue* (make-instance 'batched-queue))
 
 ;; classes
 (defclass thread ()
@@ -99,7 +105,8 @@
    (binding-symbols :initarg :binding-symbols :reader binding-symbols)
    (binding-values :initarg :binding-values :reader binding-values)
    (next-action :initform nil :accessor next-action)
-   (alive :initform T :accessor alive)))
+   (alive :initform T :accessor alive)
+   (join-future :initform nil)))
 
 ;; functions
 (defun bindings-from-alist (alist)
@@ -115,12 +122,14 @@
 (defun deactivate-thread (thread)
   (setf *active-threads*
         (remove-if (lambda (other) (eq thread other))
-                        *active-threads*)))
+                        *active-threads*))
+  (with-slots (join-future) thread
+    (when join-future (complete-future join-future))))
 
 (defun thread-loop ()
-  (loop while (not (empty-p *waiting-threads*))
-        do (let ((thread (head *waiting-threads*)))
-             (setf *waiting-threads* (tail *waiting-threads*))
+  (loop while (not (empty-p *thread-queue*))
+        do (let ((thread (head *thread-queue*)))
+             (setf *thread-queue* (tail *thread-queue*))
              (when (alive thread) ;; destroyed threads might be here
                (progv (binding-symbols thread) (binding-values thread)
                  (let ((*current-thread* thread)
@@ -137,8 +146,8 @@
     (when (next-action thread)
       (error "Called queue-next on a thread that is already queued."))
     (setf (next-action thread) action)
-    (setf *waiting-threads*
-          (snoc *waiting-threads* thread))
+    (setf *thread-queue*
+          (snoc *thread-queue* thread))
     (when (not *current-thread*) (thread-loop))))
 
 (defun make-thread (function &key name)
@@ -178,3 +187,55 @@
   (deactivate-thread thread))
 
 (defun thread-alive-p (thread) (alive thread))
+
+(defun/cc join-thread (thread)
+  (when (not *current-thread*)
+    (error "Called JOIN-THREAD not from within a green thread."))
+  (with-slots (join-future) thread
+    (when (null join-future)
+      (setf join-future (make-future)))
+    (wait-for join-future)))
+
+;; Futures
+
+(defclass future ()
+  ((vals :accessor vals)
+   (completep :initform nil)
+   (threads-waiting :initform (make-instance 'batched-queue))))
+
+(defun make-future ()
+  (make-instance 'future))
+
+(defun queue-future (future action &optional thread)
+  (let ((thread (or thread *current-thread*)))
+    (when (null thread)
+      (error "Must provide thread to queue-future if not already in thread."))
+    (when (next-action thread)
+      (error "Called queue-future on a thread that is already queued."))
+    (with-slots (completep threads-waiting) future
+      (if (not completep)
+        (progn
+          (setf (next-action thread) action)
+          (setf threads-waiting (snoc threads-waiting thread)))
+        (queue-next action thread)))))
+
+(defun complete-future (future &rest values)
+  (with-slots (vals completep threads-waiting) future
+    (when completep
+      (error "Called COMPLETE-FUTURE on an already completed future."))
+    (setf completep T)
+    (setf vals values)
+    (loop while (not (empty-p threads-waiting))
+          do (let ((next-thread (head threads-waiting)))
+               (setf threads-waiting (tail threads-waiting))
+               (setf *thread-queue* (snoc *thread-queue* next-thread))))
+    (when (not *current-thread*) (thread-loop))))
+
+(defun future-complete-p (future)
+  (slot-value future 'completep))
+
+(defun/cc wait-for (future)
+  (let/cc continuation
+    (queue-future future continuation))
+  (values-list (vals future)))
+

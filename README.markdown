@@ -121,6 +121,54 @@ executing thread.
 
 THREAD-ALIVE-P returns T if thread passed to it is still alive.
 
+JOIN-THREAD (thread) Requires CL-CONT:WITH-CALL/CC environment, causes
+the current thread to wait for the other thread to complete before
+continuing.
+
+### Futures
+
+MAKE-FUTURE () creates a future object.
+
+QUEUE-FUTURE (future action &optional thread) queues an action on
+current (or specified) thread to take place when provided future is
+completed.
+
+COMPLETE-FUTURE (future &rest values) signals that a future is complete
+and provides return values for the future.
+
+FUTURE-COMPLETE-P (future) T if future has already had COMPLETE-FUTURE
+called on it.
+
+WAIT-FOR (future) Requires CL-CONT:WITH-CALL/CC environment, causes the
+current thread to wait for the completion of the specified future and
+returns the values given to the future when it does.
+
+Example use of futures from (taken from tests):
+
+```common-lisp
+(defparameter *future-one* (make-future))
+
+(defparameter *val1* nil)
+(defparameter *val2* nil)
+
+;; WAIT-FOR test
+(with-green-thread
+  (multiple-value-bind (v1 v2) (wait-for *future-one*)
+    (setf *val1* v1)
+    (setf *val2* v2)))
+
+(is *val1* nil)
+(is *val2* nil)
+(is (future-complete-p *future-one*) nil)
+
+(complete-future *future-one* :foo :bar)
+
+(is *val1* :foo)
+(is *val2* :bar)
+(is (future-complete-p *future-one*) T)
+```
+
+
 ## Installation
 
 Clone repo into ~/quicklisp/local-projects. Run the following command:
