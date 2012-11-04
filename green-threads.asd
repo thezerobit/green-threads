@@ -20,7 +20,7 @@
   :components ((:module "src"
                 :components
                 ((:file "green-threads"))))
-  :description ""
+  :description "A lightweight threading / cooperative multitasking library."
   :long-description
   #.(with-open-file (stream (merge-pathnames
                              #p"README.markdown"
