@@ -47,11 +47,14 @@
            #:complete-future
            #:future-complete-p
            #:wait-for
-           #:get-join-future))
+           #:get-join-future
+           #:future-values))
 (in-package :green-threads)
 
 ;; Batched-Queue
 ;; adapted from "Purely Function Data Structures" by Chris Okasaki
+;; This is just to provide a simple FIFO queue for this library
+;; internally.
 
 (defclass batched-queue ()
   ((front :initform nil :initarg :front)
@@ -120,12 +123,6 @@
           (push value binding-values))))
     (values binding-symbols binding-values)))
 
-(defun deactivate-thread (thread)
-  (setf *active-threads*
-        (remove-if (lambda (other) (eq thread other))
-                        *active-threads*))
-  (complete-future (join-future thread)))
-
 (defun thread-loop ()
   (loop while (not (empty-p *thread-queue*))
         do (let ((thread (head *thread-queue*)))
@@ -135,9 +132,9 @@
                  (let ((*current-thread* thread)
                        (action (next-action thread)))
                    (setf (next-action thread) nil)
-                   (funcall action)
-                   (if (not (next-action thread))
-                     (deactivate-thread thread))))))))
+                   (funcall action))) 
+               (if (not (next-action thread))
+                 (destroy-thread thread))))))
 
 (defun queue-next (action &optional thread)
   (let ((thread (or thread *current-thread*)))
@@ -151,6 +148,10 @@
     (when (not *current-thread*) (thread-loop))))
 
 (defun make-thread (function &key name)
+  "Create a new green thread with an optional :name. The first parameter
+   should be a function that takes no arguments. The thread will be queued
+   immediately, so will run immediately if make-thread is called from
+   outside any other green threads. Returns a thread object."
   (multiple-value-bind
       (binding-symbols binding-values)
       (bindings-from-alist *default-special-bindings*)
@@ -164,31 +165,55 @@
       new-thread)))
 
 (defun/cc thread-yield ()
+  "A convenience function to yield control back to thread loop. Only works
+   properly if continuation is available, so must be run within
+   WITH-GREEN-THREAD macro or CL-CONT:WITH-CALL/CC transformed code."
   (let/cc continuation
     (queue-next continuation)))
 
 (defmacro with-green-thread (&body body)
+  "A convenience macro that runs the code in a lambda wrapped in CPS
+   transformin macros and a call to make-thread. Returns thread object."
   `(without-call/cc (make-thread (with-call/cc (lambda () ,@body)))))
 
 ;; Some BORDEAUX-THREADS functionality
-(defun all-threads () *active-threads*)
+(defun all-threads ()
+  "Returns a list of all active threads, which are threads that have
+   been created but not destroyed or finished."
+  *active-threads*)
 
-(defun current-thread () *current-thread*)
+(defun current-thread ()
+  "Returns the currently running greed thread or NIL if not called from
+   within thread."
+  *current-thread*)
 
-(defun threadp (obj) (typep obj 'thread))
+(defun threadp (obj)
+  "Returns T if the object passed in is a thread."
+  (typep obj 'thread))
 
-(defun thread-name (thread) (name thread))
+(defun thread-name (thread)
+  "Returns the name of the thread given at the time of creation or NIL."
+  (name thread))
 
 (defun destroy-thread (thread)
+  "Destroys the thread passed in, so it will not run any more. It is an
+   error to call this on the current thread."
   (when (eq thread *current-thread*)
     (error "Called DESTROY-THREAD on self."))
   (setf (alive thread) nil)
   (setf (next-action thread) nil)
-  (deactivate-thread thread))
+  (setf *active-threads*
+        (remove-if #'(lambda (other) (eq thread other))
+                   *active-threads*))
+  (complete-future (join-future thread)))
 
-(defun thread-alive-p (thread) (alive thread))
+(defun thread-alive-p (thread)
+  "Returns T if the passed in thread has not been destroyed."
+  (alive thread))
 
 (defun get-join-future (thread)
+  "Gets a future object from thread which will be completed when
+   the thread is finished."
   (join-future thread))
 
 (defun/cc join-thread (thread)
@@ -204,9 +229,13 @@
    (threads-waiting :initform (make-instance 'batched-queue))))
 
 (defun make-future ()
+  "Create a future object. A future can be completed once and can
+   be signalled with multiple return values at that time."
   (make-instance 'future))
 
 (defun queue-future (future action &optional thread)
+  "Queues an action on current (or specified) thread to take place when
+   provided future is completed."
   (let ((thread (or thread *current-thread*)))
     (when (null thread)
       (error "Must provide thread to queue-future if not already in thread."))
@@ -220,6 +249,8 @@
         (queue-next action thread)))))
 
 (defun complete-future (future &rest values)
+  "Signals that a future is complete and provides return values for the
+   future."
   (with-slots (vals completep threads-waiting) future
     (when completep
       (error "Called COMPLETE-FUTURE on an already completed future."))
@@ -232,10 +263,19 @@
     (when (not *current-thread*) (thread-loop))))
 
 (defun future-complete-p (future)
+  "Returns T if the future has been completed."
   (slot-value future 'completep))
 
+(defun future-values (future)
+  "Returns the values given to the future when it
+   was completed."
+  (values-list (vals future)))
+
 (defun/cc wait-for (future)
+  "Requires CL-CONT:WITH-CALL/CC environment, causes the current 
+   thread to wait for the completion of the specified future and 
+   returns the values given to the future when it was completed."
   (let/cc continuation
     (queue-future future continuation))
-  (values-list (vals future)))
+  (future-values future))
 

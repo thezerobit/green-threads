@@ -141,9 +141,12 @@ and provides return values for the future.
 FUTURE-COMPLETE-P (future) T if future has already had COMPLETE-FUTURE
 called on it.
 
+FUTURE-VALUES (future) Returns the values given to the future when it
+was completed.
+
 WAIT-FOR (future) Requires CL-CONT:WITH-CALL/CC environment, causes the
 current thread to wait for the completion of the specified future and
-returns the values given to the future when it does.
+returns the values given to the future when it was completed.
 
 GET-JOIN-FUTURE (thread) Returns a future which will complete when the
 passed in thread completes. This provides a lower level way to join
