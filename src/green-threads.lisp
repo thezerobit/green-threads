@@ -46,7 +46,7 @@
            #:queue-future
            #:complete-future
            #:future-complete-p
-           #:wait-for
+           #:wait-on
            #:get-join-future
            #:future-values))
 (in-package :green-threads)
@@ -219,7 +219,7 @@
 (defun/cc join-thread (thread)
   (when (not *current-thread*)
     (error "Called JOIN-THREAD not from within a green thread."))
-  (wait-for (join-future thread)))
+  (wait-on (join-future thread)))
 
 ;; Futures
 
@@ -271,7 +271,7 @@
    was completed."
   (values-list (vals future)))
 
-(defun/cc wait-for (future)
+(defun/cc wait-on (future)
   "Requires CL-CONT:WITH-CALL/CC environment, causes the current 
    thread to wait for the completion of the specified future and 
    returns the values given to the future when it was completed."

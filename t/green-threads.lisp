@@ -43,9 +43,9 @@
 (defparameter *val1* nil)
 (defparameter *val2* nil)
 
-;; WAIT-FOR test
+;; WAIT-ON test
 (with-green-thread
-  (multiple-value-bind (v1 v2) (wait-for *future-one*)
+  (multiple-value-bind (v1 v2) (wait-on *future-one*)
     (setf *val1* v1)
     (setf *val2* v2)))
 
@@ -61,9 +61,9 @@
 (is (future-complete-p *future-one*) T
     "The future is now complete.")
 
-;; WAIT-FOR already completed future
+;; WAIT-ON already completed future
 (with-green-thread
-  (multiple-value-bind (v1 v2) (wait-for *future-one*)
+  (multiple-value-bind (v1 v2) (wait-on *future-one*)
     (setf *val1* v2)
     (setf *val2* v1)))
 
@@ -77,7 +77,7 @@
 
 (setf *thread1*
       (with-green-thread
-        (wait-for *future*)))
+        (wait-on *future*)))
 
 (is (threadp *thread1*) T "WITH-GREEN-THREAD returned a thread object.")
 

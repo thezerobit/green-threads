@@ -144,7 +144,7 @@ called on it.
 FUTURE-VALUES (future) Returns the values given to the future when it
 was completed.
 
-WAIT-FOR (future) Requires CL-CONT:WITH-CALL/CC environment, causes the
+WAIT-ON (future) Requires CL-CONT:WITH-CALL/CC environment, causes the
 current thread to wait for the completion of the specified future and
 returns the values given to the future when it was completed.
 
