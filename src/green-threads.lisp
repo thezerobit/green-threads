@@ -48,7 +48,8 @@
            #:future-complete-p
            #:wait-on
            #:get-join-future
-           #:future-values))
+           #:future-values)
+  (:nicknames :gt))
 (in-package :green-threads)
 
 ;; Batched-Queue
