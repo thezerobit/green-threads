@@ -93,4 +93,58 @@
 
 (is *thread-joined* T "The thread has now joined.")
 
+;; CHANNEL
+(defparameter *x* 0)
+(let ((chan (make-instance 'channel)))
+  (with-green-thread
+    (with-green-thread
+      (setf *x* (recv/cc chan)))
+    (with-green-thread
+      (send/cc chan 1))))
+(is *x* 1 "1 received.")
+
+(setf *x* 0)
+(let ((chan (make-instance 'channel)))
+  (with-green-thread
+    (with-green-thread
+      (send/cc chan 1))
+    (with-green-thread
+      (setf *x* (recv/cc chan)))))
+(is *x* 1 "1 received.")
+
+(let ((chan (make-instance 'channel))
+      (z 0))
+  (with-green-thread
+    (dotimes (x 10)
+      (with-green-thread
+        (send/cc chan x)))
+    (dotimes (y 10)
+      (with-green-thread
+        (when (= (recv/cc chan) y) 
+          (incf z)))))
+  (is z 10 "Messages received."))
+
+;; non-blocking 
+(let ((chan (make-instance 'channel)))
+  (with-green-thread
+    (is (send/cc chan "message" :blockp nil) nil "non-blocking SEND test.")))
+
+(let ((chan (make-instance 'channel)))
+  (with-green-thread
+    (is (multiple-value-list (recv/cc chan :blockp nil)) (list nil nil) 
+        "non-blocking RECV test.")))
+
+;; this test is sensitive to deterministic nature of green-threads
+(let ((chan (make-instance 'channel))
+      (z 0))
+  (with-green-thread
+    (dotimes (x 10)
+      (with-green-thread
+        (send/cc chan x)))
+    (dotimes (y 10)
+      (with-green-thread
+        (when (= (recv/cc chan :blockp nil) y) 
+          (incf z)))))
+  (is z 10 "Messages received."))
+
 (finalize)

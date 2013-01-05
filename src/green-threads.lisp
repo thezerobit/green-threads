@@ -22,8 +22,6 @@
            ;; #:release-recursive-lock
            ;; #:with-recursive-lock-held
 
-           #:thread-yield
-
            ;; condition variables not yet supported
            ;; TODO: instead of futures?
            ;; #:make-condition-variable
@@ -48,7 +46,14 @@
            #:future-complete-p
            #:wait-on
            #:get-join-future
-           #:future-values)
+           #:future-values
+
+           ;; channels:
+           #:channel
+           #:send/cc
+           #:recv/cc
+           #:send
+           #:recv)
   (:nicknames :gt))
 (in-package :green-threads)
 
@@ -132,6 +137,8 @@
                (progv (binding-symbols thread) (binding-values thread)
                  (let ((*current-thread* thread)
                        (action (next-action thread)))
+                   (when (null action)
+                     (error "attempting to queue thread with no next-action"))
                    (setf (next-action thread) nil)
                    (funcall action))) 
                (if (not (next-action thread))
@@ -142,7 +149,18 @@
     (when (null thread)
       (error "Must provide thread to queue-next if not already in thread."))
     (when (next-action thread)
-      (error "Called queue-next on a thread that is already queued."))
+      (error "Called QUEUE-NEXT on a thread that is already queued."))
+    (setf (next-action thread) action)
+    (setf *thread-queue*
+          (snoc *thread-queue* thread))
+    (when (not *current-thread*) (thread-loop))))
+
+(defun queue-next-replace (action &optional thread)
+  (let ((thread (or thread *current-thread*)))
+    (when (null thread)
+      (error "Must provide thread to QUEUE-NEXT-REPLACE if not already in thread."))
+    (when (not (next-action thread))
+      (error "Called QUEUE-NEXT-REPLACE on a thread that isn't already queued."))
     (setf (next-action thread) action)
     (setf *thread-queue*
           (snoc *thread-queue* thread))
@@ -280,3 +298,63 @@
     (queue-future future continuation))
   (future-values future))
 
+;; channels
+
+(defun/cc send/cc (channel value &key (blockp t))
+  "Requires CL-CONT:WITH-CALL/CC environment. Sends a value to a
+   channel, and blocks, unless blockp is nil. Returns the channel
+   that received the value unless blockp is nil and there is no
+   thread waiting to receive in which case it returns nil."
+  (let/cc continuation
+    (send channel value continuation :blockp blockp)))
+
+(defun/cc recv/cc (channel &key (blockp t))
+  "Requires CL-CONT:WITH-CALL/CC environment. Receives a value from a 
+   channel, and blocks, unless blockp is nil. Returns 2 values, the
+   first is the value being received and the second is a generalized
+   boolean that is only nil if blockp is nil and there is no thread
+   waiting to send a value."
+  (let/cc continuation
+    (recv channel continuation :blockp blockp)))
+
+(defgeneric send (channel value continuation &key))
+(defgeneric recv (channel continuation &key))
+
+(defclass channel ()
+  ((waiting-to-send :initform (make-instance 'batched-queue))
+   (waiting-to-recv :initform (make-instance 'batched-queue))))
+
+(defmethod send ((channel channel) value continuation &key (blockp t))
+  (with-slots (waiting-to-send waiting-to-recv) channel
+    (if (empty-p waiting-to-recv)
+      (if blockp
+        (with-slots (next-action) *current-thread*
+          (setf next-action continuation)
+          (setf waiting-to-send
+                (snoc waiting-to-send
+                      (list *current-thread* value))))
+        (queue-next (lambda () (funcall continuation nil))))
+      (let ((recv-thread (head waiting-to-recv))) 
+        (setf waiting-to-recv (tail waiting-to-recv))
+        (queue-next-replace
+          (let ((action (next-action recv-thread)))
+            (lambda () (funcall action value t)))
+          recv-thread)
+        (queue-next (lambda () (funcall continuation channel)))))))
+
+(defmethod recv ((channel channel) continuation &key (blockp t))
+  (with-slots (waiting-to-send waiting-to-recv) channel
+    (if (empty-p waiting-to-send)
+      (if blockp
+        (with-slots (next-action) *current-thread*
+          (setf next-action continuation)
+          (setf waiting-to-recv
+               (snoc waiting-to-recv *current-thread*)))
+        (queue-next (lambda () (funcall continuation nil nil))))
+      (destructuring-bind (send-thread value) (head waiting-to-send)
+        (setf waiting-to-send (tail waiting-to-send))
+        (queue-next-replace
+          (let ((action (next-action send-thread)))
+            (lambda () (funcall action channel))) 
+          send-thread)
+        (queue-next (lambda () (funcall continuation value t)))))))

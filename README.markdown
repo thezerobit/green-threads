@@ -177,6 +177,33 @@ Example use of futures from (taken from tests):
 (is (future-complete-p *future-one*) T)
 ```
 
+### Channels
+
+Inspired by sykopomp's [ChanL](https://github.com/sykopomp/chanl), which
+relies on BORDEAUX-THREADS, I've added basic unbuffered channel support.
+
+(make-instance 'CHANNEL) creates a new channel.
+
+SEND/CC (channel value &key blockp) Requires CL-CONT:WITH-CALL/CC
+environment. Sends a value to a channel, and blocks, unless blockp is
+nil. Returns the channel that received the value unless blockp is nil
+and there is no thread waiting to receive in which case it returns nil.
+
+RECV/CC (channel &key blockp) Requires CL-CONT:WITH-CALL/CC environment.
+Receives a value from a channel, and blocks, unless blockp is nil.
+Returns 2 values, the first is the value being received and the second
+is a generalized boolean that is only nil if blockp is nil and there is
+no thread waiting to send a value.
+
+SEND (channel value continuation &key blockp) Just like SEND/CC but
+doesn't require CL-CONT, you just have to pass in the continuation
+manually. CPS is fun. Instead of returning the channel that receives the
+message, it (or nil) is passed to continuation.
+
+RECV (channel continuation &key blockp) Just like RECV/CC but doesn't
+require CL-CONT, you just have to pass in the continuation manually.
+CPS is fun. Instead of returning the 2 values, the continuation is
+called with them.
 
 ## Installation
 
