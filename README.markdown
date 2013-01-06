@@ -205,6 +205,36 @@ require CL-CONT, you just have to pass in the continuation manually.
 CPS is fun. Instead of returning the 2 values, the continuation is
 called with them.
 
+Behold, the venerable sieve of Eratosthenes:
+
+```common-lisp
+(ql:quickload :green-threads)
+
+(cl-cont:defun/cc counter (end chan)
+  (loop for i from 2 to end
+        do (gt:send/cc chan i)))
+
+(declaim (ftype function filter)) ;; unnecessary, silence warnings
+
+(cl-cont:defun/cc filter (listen)
+  (let ((prime (gt:recv/cc listen)))
+    (format t "~a " prime)
+    (let ((chan (make-instance 'gt:channel)))
+      (gt:with-green-thread
+        (filter chan))
+      (loop
+        (let ((i (gt:recv/cc listen)))
+          (if (> (mod i prime) 0)
+            (gt:send/cc chan i)))))))
+
+(gt:with-green-thread
+  (let ((count (make-instance 'gt:channel)))
+    (gt:with-green-thread
+      (counter 100 count))
+    (gt:with-green-thread
+      (filter count))))
+```
+
 ## Installation
 
 Clone repo into ~/quicklisp/local-projects. Run the following command:
