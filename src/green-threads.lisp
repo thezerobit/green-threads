@@ -5,11 +5,7 @@
 
 (in-package :cl-user)
 (defpackage green-threads
-  (:use :cl :cl-cont)
-  (:import-from :cl-async-future
-                #:finished
-                #:make-future
-                #:finish)
+  (:use :cl :cl-cont :cl-async-future)
   (:export #:make-thread
            #:*default-special-bindings*
            #:current-thread
@@ -44,11 +40,10 @@
            #:with-green-thread
 
            ;; futures:
-           #:make-green-future
+           #:make-future
            #:queue-future
            #:finish
-           #:complete-future
-           #:future-complete-p
+           #:future-finished-p
            #:wait-on
            #:get-join-future
            #:future-values
@@ -121,7 +116,7 @@
    (binding-values :initarg :binding-values :reader binding-values)
    (next-action :initform nil :accessor next-action)
    (alive :initform T :accessor alive)
-   (join-future :initform (make-green-future) :reader join-future)))
+   (join-future :initform (make-future) :reader join-future)))
 
 ;; functions
 (defun bindings-from-alist (alist)
@@ -229,7 +224,7 @@
   (setf *active-threads*
         (remove-if #'(lambda (other) (eq thread other))
                    *active-threads*))
-  (complete-future (join-future thread)))
+  (finish (join-future thread)))
 
 (defun thread-alive-p (thread)
   "Returns T if the passed in thread has not been destroyed."
@@ -247,15 +242,6 @@
 
 ;; Futures
 
-(defclass green-future (cl-async-future:future)
-  ((threads-waiting :initform (make-instance 'batched-queue))))
-
-(defun make-green-future ()
-  "Create a future object. A future can be completed once and can
-   be signalled with multiple return values at that time."
-  ;; explicitely create our future to be thread-centric (no double-fireing)
-  (make-instance 'green-future :preserve-callbacks nil :reattach-callbacks t))
-
 (defun queue-future (future action &optional thread)
   "Queues an action on current (or specified) thread to take place when
    provided future is completed."
@@ -264,33 +250,16 @@
       (error "Must provide thread to queue-future if not already in thread."))
     (when (next-action thread)
       (error "Called queue-future on a thread that is already queued."))
-    (with-slots ((completep finished) threads-waiting) future
-      (if (not completep)
-        (progn
-          (setf (next-action thread) action)
-          (setf threads-waiting (snoc threads-waiting thread)))
-        (queue-next action thread)))))
-
-(defmethod finish ((future green-future) &rest values)
-  (with-slots ((completep finished) threads-waiting) future
-    (when completep
-      (error "Called COMPLETE-FUTURE on an already completed future."))
-    ;; let cl-async-future do its magic
-    (call-next-method)
-    (loop while (not (empty-p threads-waiting))
-          do (let ((next-thread (head threads-waiting)))
-               (setf threads-waiting (tail threads-waiting))
-               (setf *thread-queue* (snoc *thread-queue* next-thread))))
-    (when (not *current-thread*) (thread-loop))))
-
-(defun complete-future (future &rest values)
-  "Signals that a future is complete and provides return values for the
-   future."
-  (apply 'finish (append (list future) values)))
-
-(defun future-complete-p (future)
-  "Returns T if the future has been completed."
-  (slot-value future 'finished))
+    (if (not (future-finished-p future))
+      (progn
+        (setf (next-action thread) action)
+        ;; attach a callback to the future that adds the thread to the queue and
+        ;; then runs the thread loop
+        (attach future
+          (lambda (&rest vals)
+            (setf *thread-queue* (snoc *thread-queue* thread))
+            (when (not *current-thread*) (thread-loop)))))
+      (queue-next action thread))))
 
 (defun future-values (future)
   "Returns the values given to the future when it
@@ -303,7 +272,7 @@
    returns the values given to the future when it was completed."
   (let/cc continuation
     (queue-future future continuation))
-  (future-values future))
+  (future-values (lookup-forwarded-future future)))
 
 ;; channels
 

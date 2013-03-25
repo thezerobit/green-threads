@@ -38,7 +38,7 @@
 (is *var* :set "The thread executed.")
 
 ;; Test Futures
-(defparameter *future-one* (make-green-future))
+(defparameter *future-one* (make-future))
 
 (defparameter *val1* nil)
 (defparameter *val2* nil)
@@ -51,14 +51,14 @@
 
 (is *val1* nil "The first value has not yet been set.")
 (is *val2* nil "The second value has not yet been set.")
-(is (future-complete-p *future-one*) nil
+(is (future-finished-p *future-one*) nil
     "The future is not yet complete.")
 
-(complete-future *future-one* :foo :bar)
+(finish *future-one* :foo :bar)
 
 (is *val1* :foo "The first value has been set.")
 (is *val2* :bar "The second value has been set.")
-(is (future-complete-p *future-one*) T
+(is (future-finished-p *future-one*) T
     "The future is now complete.")
 
 ;; WAIT-ON already completed future
@@ -73,7 +73,7 @@
 ;; Test THREAD-JOIN
 
 (defparameter *thread1* nil)
-(defparameter *future* (make-green-future))
+(defparameter *future* (make-future))
 
 (setf *thread1*
       (with-green-thread
@@ -89,7 +89,7 @@
 
 (is *thread-joined* nil "The thread has not yet joined.")
 
-(complete-future *future*)
+(finish *future*)
 
 (is *thread-joined* T "The thread has now joined.")
 
