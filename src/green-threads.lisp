@@ -242,6 +242,15 @@
 
 ;; Futures
 
+;; TODO: remove once cl-async-future gets version bump to 0.4.2 in Quicklisp
+(eval-when (:load-toplevel :compile-toplevel)
+  (unless (asdf:version-satisfies (asdf:find-system :cl-async-future) "0.4.2")
+    (defun lookup-forwarded-future (future)
+      (cl-async-future::lookup-actual-future future))
+
+    (defun future-finished-p (future)
+      (cl-async-future::future-finished future))))
+
 (defun queue-future (future action &optional thread)
   "Queues an action on current (or specified) thread to take place when
    provided future is completed."
