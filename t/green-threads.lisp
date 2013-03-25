@@ -38,7 +38,7 @@
 (is *var* :set "The thread executed.")
 
 ;; Test Futures
-(defparameter *future-one* (make-future))
+(defparameter *future-one* (make-green-future))
 
 (defparameter *val1* nil)
 (defparameter *val2* nil)
@@ -73,7 +73,7 @@
 ;; Test THREAD-JOIN
 
 (defparameter *thread1* nil)
-(defparameter *future* (make-future))
+(defparameter *future* (make-green-future))
 
 (setf *thread1*
       (with-green-thread

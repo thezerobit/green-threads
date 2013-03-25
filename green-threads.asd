@@ -16,7 +16,7 @@
   :version "0.2"
   :author "Stephen A. Goss"
   :license "Modified BSD"
-  :depends-on (:cl-cont)
+  :depends-on (:cl-cont :cl-async-future)
   :components ((:module "src"
                 :components
                 ((:file "green-threads"))))
