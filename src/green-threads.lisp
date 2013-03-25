@@ -5,7 +5,7 @@
 
 (in-package :cl-user)
 (defpackage green-threads
-  (:use :cl :cl-cont)
+  (:use :cl :cl-cont :cl-async-future)
   (:export #:make-thread
            #:*default-special-bindings*
            #:current-thread
@@ -42,8 +42,8 @@
            ;; futures:
            #:make-future
            #:queue-future
-           #:complete-future
-           #:future-complete-p
+           #:finish
+           #:future-finished-p
            #:wait-on
            #:get-join-future
            #:future-values
@@ -224,7 +224,7 @@
   (setf *active-threads*
         (remove-if #'(lambda (other) (eq thread other))
                    *active-threads*))
-  (complete-future (join-future thread)))
+  (finish (join-future thread)))
 
 (defun thread-alive-p (thread)
   "Returns T if the passed in thread has not been destroyed."
@@ -242,15 +242,14 @@
 
 ;; Futures
 
-(defclass future ()
-  ((vals :accessor vals)
-   (completep :initform nil)
-   (threads-waiting :initform (make-instance 'batched-queue))))
+;; TODO: remove once cl-async-future gets version bump to 0.4.2 in Quicklisp
+(eval-when (:load-toplevel :compile-toplevel)
+  (unless (asdf:version-satisfies (asdf:find-system :cl-async-future) "0.4.2")
+    (defun lookup-forwarded-future (future)
+      (cl-async-future::lookup-actual-future future))
 
-(defun make-future ()
-  "Create a future object. A future can be completed once and can
-   be signalled with multiple return values at that time."
-  (make-instance 'future))
+    (defun future-finished-p (future)
+      (cl-async-future::future-finished future))))
 
 (defun queue-future (future action &optional thread)
   "Queues an action on current (or specified) thread to take place when
@@ -260,35 +259,21 @@
       (error "Must provide thread to queue-future if not already in thread."))
     (when (next-action thread)
       (error "Called queue-future on a thread that is already queued."))
-    (with-slots (completep threads-waiting) future
-      (if (not completep)
-        (progn
-          (setf (next-action thread) action)
-          (setf threads-waiting (snoc threads-waiting thread)))
-        (queue-next action thread)))))
-
-(defun complete-future (future &rest values)
-  "Signals that a future is complete and provides return values for the
-   future."
-  (with-slots (vals completep threads-waiting) future
-    (when completep
-      (error "Called COMPLETE-FUTURE on an already completed future."))
-    (setf completep T)
-    (setf vals values)
-    (loop while (not (empty-p threads-waiting))
-          do (let ((next-thread (head threads-waiting)))
-               (setf threads-waiting (tail threads-waiting))
-               (setf *thread-queue* (snoc *thread-queue* next-thread))))
-    (when (not *current-thread*) (thread-loop))))
-
-(defun future-complete-p (future)
-  "Returns T if the future has been completed."
-  (slot-value future 'completep))
+    (if (not (future-finished-p future))
+      (progn
+        (setf (next-action thread) action)
+        ;; attach a callback to the future that adds the thread to the queue and
+        ;; then runs the thread loop
+        (attach future
+          (lambda (&rest vals)
+            (setf *thread-queue* (snoc *thread-queue* thread))
+            (when (not *current-thread*) (thread-loop)))))
+      (queue-next action thread))))
 
 (defun future-values (future)
   "Returns the values given to the future when it
    was completed."
-  (values-list (vals future)))
+  (values-list (cl-async-future::future-values future)))
 
 (defun/cc wait-on (future)
   "Requires CL-CONT:WITH-CALL/CC environment, causes the current 
@@ -296,7 +281,7 @@
    returns the values given to the future when it was completed."
   (let/cc continuation
     (queue-future future continuation))
-  (future-values future))
+  (future-values (lookup-forwarded-future future)))
 
 ;; channels
 
