@@ -13,7 +13,7 @@
 (in-package :green-threads-asd)
 
 (defsystem green-threads
-  :version "0.2"
+  :version "0.3"
   :author "Stephen A. Goss"
   :license "Modified BSD"
   :depends-on (:cl-cont :cl-async-future)

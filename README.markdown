@@ -135,10 +135,10 @@ QUEUE-FUTURE (future action &optional thread) queues an action on
 current (or specified) thread to take place when provided future is
 completed.
 
-COMPLETE-FUTURE (future &rest values) signals that a future is complete
+FINISH (future &rest values) signals that a future is complete
 and provides return values for the future.
 
-FUTURE-COMPLETE-P (future) T if future has already had COMPLETE-FUTURE
+FUTURE-FINISHED-P (future) T if future has already had COMPLETE-FUTURE
 called on it.
 
 FUTURE-VALUES (future) Returns the values given to the future when it
