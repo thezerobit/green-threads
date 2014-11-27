@@ -257,6 +257,7 @@
         ;; then runs the thread loop
         (attach future
           (lambda (&rest vals)
+            (declare (ignore vals))
             (setf *thread-queue* (snoc *thread-queue* thread))
             (when (not *current-thread*) (thread-loop)))))
       (queue-next action thread))))
