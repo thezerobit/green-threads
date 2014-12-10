@@ -265,7 +265,7 @@
 (defun future-values (future)
   "Returns the values given to the future when it
    was completed."
-  (values-list (blackbird::promise-values future)))
+  (values-list (cl-async-future::future-values future)))
 
 (defun/cc wait-on (future)
   "Requires CL-CONT:WITH-CALL/CC environment, causes the current 
